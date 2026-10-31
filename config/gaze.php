@@ -8,8 +8,8 @@
 return [
 
     // null (the default): on in every environment except production. GAZE_ENABLED overrides.
-    // When off, no listener, middleware, route or dump handler is registered and gaze()
-    // returns an inert instance.
+    // When off, nothing of the package runs: gaze() returns a no-op (gaze_dd() doesn't exit),
+    // and no listener, middleware, route or dump handler is registered.
     'enabled' => env('GAZE_ENABLED'),
 
     // Where the Gaze app listens. Unset: RAY_HOST / RAY_PORT, then discovery (127.0.0.1;
@@ -72,7 +72,7 @@ return [
         'jobs' => true,
         'commands' => true,
 
-        // Continue a W3C traceparent sent by the browser (@thewonderjoy/gaze-js).
+        // Link a request to the call that sent its W3C traceparent (a gaze-js page or server).
         'accept_traceparent' => true,
 
         // Request paths (Str::is patterns) that get no trace.

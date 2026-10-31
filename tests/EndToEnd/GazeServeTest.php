@@ -46,12 +46,14 @@ final class GazeServeTest extends TestCase
         $repo = dirname(__DIR__, 4);
         $exe = $repo . '/target/debug/gaze-serve' . (DIRECTORY_SEPARATOR === '\\' ? '.exe' : '');
         if (!is_file($exe) && is_file($repo . '/Cargo.toml')) {
-            $build = proc_open(['cargo', 'build', '-p', 'gaze-core'], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, $repo);
+            // Output goes to a file, not pipes. Cargo prints its progress to stderr; reading stdout to the
+            // end first left cargo blocked on a full stderr pipe (about 4 KB on Windows), and CI hung.
+            $log = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'gaze-cargo-build-' . getmypid() . '.log';
+            $build = proc_open(['cargo', 'build', '-p', 'gaze-core'], [1 => ['file', $log, 'w'], 2 => ['redirect', 1]], $pipes, $repo);
             if (is_resource($build)) {
-                stream_get_contents($pipes[1]);
-                stream_get_contents($pipes[2]);
                 proc_close($build);
             }
+            @unlink($log);
         }
         if (!is_file($exe)) {
             return; // tests are skipped in setUp()

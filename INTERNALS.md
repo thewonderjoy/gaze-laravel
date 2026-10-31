@@ -8,7 +8,7 @@ Every unit of work is one trace, and every entry carries it (batch-level `trace 
 
 | Unit | Opens on | Closes with a summary row (`trace.ended = true`) |
 |---|---|---|
-| HTTP request (`http`) | a global middleware, prepended to the stack; continues an incoming W3C `traceparent` | `RequestHandled`: kind `request` with method, url, uri, status, route, action, middleware, `duration_ms`, `memory_peak`, queries, query_ms, duplicates, slow, n_plus_one, logs, mails, jobs, exceptions |
+| HTTP request (`http`) | a global middleware, prepended to the stack; an incoming W3C `traceparent` becomes its parent (the caller's span id), never its id | `RequestHandled`: kind `request` with method, url, uri, status, route, action, middleware, `duration_ms`, `memory_peak`, queries, query_ms, duplicates, slow, n_plus_one, logs, mails, jobs, exceptions |
 | Queued job (`job`) | `JobProcessing` | `JobProcessed` / `JobFailed` / `JobReleasedAfterException`: kind `job` with event, status, queue, attempts, exception |
 | Artisan command (`command`) | `CommandStarting` | `CommandFinished`: kind `command` with exit code (arguments redacted) |
 | Test (`test`) | the `TracesTests` trait | tearDown: kind `test` with the result |
@@ -38,7 +38,7 @@ Every unit of work is one trace, and every entry carries it (batch-level `trace 
 | `http_client` (`GAZE_HTTP_CLIENT`) | off | `http`: one entry per call, added when sent and updated with status, response and `duration_ms`, or with the error of a `ConnectionFailed` | `showHttpClientRequests()` |
 | `deprecations` (`GAZE_DEPRECATIONS`) | off | PHP deprecations as gray `app_log` entries; when off they are filtered (recognised by the deprecation handler on the stack, not by the word "deprecated") | `showDeprecations()` |
 
-- A listener is registered only when its watcher is on. With Gaze disabled nothing is registered at all: no listener, no middleware, no route, no dump handler, and `gaze()` returns an inert instance.
+- A listener is registered only when its watcher is on. With Gaze disabled nothing is registered at all: no listener, no middleware, no route, no dump handler. The provider switches gaze-php off without loading the manager, so a request loads the provider, gaze-php's `Config` and `Noop`, and no other class of either package (`DisabledTest` checks this in a process of its own). `gaze()` returns the Noop; the `->gaze()` macros and Blade directives stay, and do nothing. `GazeServiceProvider::RUNS` tells the Noop which macros run a callback (`showQueries($fn)`...); a test keeps it in step with `GazeMixin`.
 - `showX($callback)` switches the watcher on for the callback only and returns its result. `showX()` returns a proxy whose modifiers (`->green()->label('SQL')->large()`) apply to every entry of that watcher. `stopShowingX()` switches it off.
 - The app can switch watchers for every process. `GET /v1/hello` may carry `"watchers": {"queries": false, "events": true}`. It is read at boot (shared by all processes for 60 s through the client's state file) and re-read by queue workers between jobs and by Octane between requests. Precedence: config < the app < `showX()` in this process. `remote_watchers => false` ignores the app.
 

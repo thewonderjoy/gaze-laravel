@@ -9,9 +9,11 @@ Gaze is a fast debug window for PHP, Laravel and JavaScript (Windows first). Thi
 Requires PHP 8.2+ and Laravel 12 or 13. Off in production unless you set `GAZE_ENABLED=true`.
 
 ```bash
-composer require --dev thewonderjoy/gaze-laravel
+composer require thewonderjoy/gaze-laravel
 php artisan gaze:doctor    # checks that this app can reach Gaze
 ```
+
+This is a normal dependency, as spatie/laravel-ray recommends. In production Gaze is off: it registers nothing, sends nothing and loads nothing but its service provider and a no-op, so a `gaze()`, `gaze_dd()`, `->gaze()` or `@gaze` you forgot to remove does nothing (`gaze_dd()` doesn't exit). If you add `--dev` instead, a forgotten call becomes a fatal error in production, so run `php artisan gaze:clean` before you deploy.
 
 The service provider is discovered automatically. To change settings, publish the config: `php artisan vendor:publish --tag=gaze-config`.
 
@@ -34,6 +36,65 @@ $this->get('/orders')->gaze()->assertOk();  // on test responses
 @gazeAll        {{-- every variable in this view --}}
 @gazeMeasure    {{-- stopwatch --}}
 ```
+
+## Methods
+
+`gaze()` has every method of [gaze-php](https://packagist.org/packages/thewonderjoy/gaze-php) (values, colours, tables, `pause()`, `measure()`, `count()`, screens and so on). This package adds the Laravel ones, with the same names as spatie/laravel-ray.
+
+**Laravel values**
+
+| Method | What it shows |
+|---|---|
+| `model(...$models)` | Eloquent models with their attributes and loaded relations, one entry per model. Collections are flattened. |
+| `models($collection)` | The same, for a collection. |
+| `mailable(...$mailables)` | The rendered mail with subject, from, to, cc and bcc. |
+| `view($view)` | A view's name, path and data. |
+| `context(...$keys)` | Laravel Context data: all of it, or the keys you name. |
+| `hiddenContext(...$keys)` | Hidden Context data. |
+| `env($only = null, $file = null)` | The `.env` file as a table, with secrets masked. |
+| `testResponse($response)` | A test response: status, headers, body and decoded JSON. |
+| `countQueries(fn () => ...)` | Runs the closure, shows how many queries it ran and how long they took, and returns its result. |
+
+**Watcher switches**
+
+Every watcher in the second table has the same three methods. This table uses `Queries` as the example.
+
+| Method | What it does |
+|---|---|
+| `showQueries()` | Turns the watcher on from here. Returns an object for styling its entries: `gaze()->showQueries()->red()`. |
+| `showQueries(fn () => ...)` | Turns it on only while the closure runs, and returns the closure's result. |
+| `stopShowingQueries()` | Turns it off. |
+
+| Watcher | Sends |
+|---|---|
+| `Queries` | every query |
+| `DuplicateQueries`, `SlowQueries($ms)` | only repeated queries, or only queries slower than `$ms` (default 500) |
+| `SelectQueries`, `InsertQueries`, `UpdateQueries`, `DeleteQueries` | only that type of query |
+| `Events`, `Exceptions`, `Jobs`, `Cache`, `Views`, `Mails`, `Dumps`, `Logs`, `Deprecations` | that watcher's entries |
+| `Requests`, `HttpClientRequests` | incoming request details, outgoing HTTP calls |
+
+Short forms, as in laravel-ray: `queries()`, `slowQueries()`, `events()`, `jobs()`, `views()`, `requests()`, `httpClientRequests()`.
+
+`showConditionalQueries(fn (QueryExecuted $query) => ..., $callback = null, $name = 'default')` sends only the queries the condition accepts. Stop it with `stopShowingConditionalQueries($name)`.
+
+**On other objects**
+
+| Call | Sends |
+|---|---|
+| `collect($rows)->gaze($label = '')` | the collection's items |
+| `str($text)->gaze($label = '')` | the string |
+| `User::where(...)->gaze($label = '')` | the SQL with bindings, before it runs |
+| `$this->get('/')->gaze()` | the test response, as `testResponse()` does |
+
+Each one returns the object it was called on, so you can keep chaining.
+
+**Blade**
+
+| Directive | Sends |
+|---|---|
+| `@gaze($a, $b)` | the values |
+| `@gazeAll` | every variable in the view |
+| `@gazeMeasure`, `@gazeMeasure('name')` | a stopwatch, like `measure()` |
 
 ## Traces
 
@@ -71,6 +132,8 @@ Each watcher can be switched in `config/gaze.php`, with an env variable, or for 
 
 Repeated queries (N+1) are folded into one row that lists every run. A watcher that is off registers nothing, so it costs nothing.
 
+With `queries` off you can still send part of them: `GAZE_DUPLICATE_QUERIES`, `GAZE_SLOW_QUERIES` (threshold: `GAZE_SLOW_QUERY_MS`, default 500), and `GAZE_SELECT_QUERIES`, `GAZE_INSERT_QUERIES`, `GAZE_UPDATE_QUERIES`, `GAZE_DELETE_QUERIES`.
+
 ## Secrets are masked
 
 Before anything leaves your app, passwords, tokens, cookies, `Authorization` headers and `.env` secrets (`*_KEY`, `*_SECRET`, `*_PASSWORD`, `*_TOKEN`) are replaced with a mask. This is on by default; see `redact` in the config.
@@ -94,32 +157,19 @@ Before anything leaves your app, passwords, tokens, cookies, `Authorization` hea
 
 ## Coming from spatie/laravel-ray
 
-The same methods exist on `gaze()` under the same names. You can keep `spatie/laravel-ray` installed next to it; Gaze also accepts Ray's messages. The Blade directives are `@gaze`, `@gazeAll` and `@gazeMeasure`. One difference: query watching is on by default, because traces and N+1 detection need it.
+You can keep `spatie/laravel-ray` installed next to this package, because the Gaze app also accepts Ray's messages. To move over, replace `ray(` with `gaze(`. The method names are the same, apart from these:
 
-## Develop
+| laravel-ray | Gaze |
+|---|---|
+| `collect()->ray()`, `str()->ray()`, `$query->ray()`, `$response->ray()` | `->gaze()` |
+| `@ray`, `@xray`, `@measure` | `@gaze`, `@gazeAll`, `@gazeMeasure` |
+| `ray($model)`, `ray($mailable)` | `gaze()->model($model)`, `gaze()->mailable($mail)`. Plain `gaze($model)` shows an object dump, not the model view. |
+| `php artisan ray:publish-config` | `php artisan vendor:publish --tag=gaze-config` |
+| `php artisan ray:clean` | `php artisan gaze:clean` |
+| `loggedMail()` | not yet |
+| query watching is off by default | on by default, because traces and N+1 detection need it |
 
-This package lives in the [thewonderjoy/gaze](https://github.com/thewonderjoy/gaze) monorepo under `packages/laravel`. The `thewonderjoy/gaze-laravel` repo is a read-only copy; send changes to the monorepo.
-
-```bash
-cd packages/laravel
-composer install      # uses ../php (gaze-php) from the monorepo
-vendor/bin/phpunit    # starts a fake app on 127.0.0.1:23640, plus an end-to-end suite
-```
-
-The end-to-end suite runs the real Gaze server (`cargo build -p gaze-core` if it is missing), so it needs Rust. It is skipped outside the monorepo. To test against Laravel 12: `composer require --dev "orchestra/testbench:^10.0" -W`.
-
-For a real app to click around in, see `dev/laravel-app` in the monorepo. How the package works inside: [INTERNALS.md](INTERNALS.md).
-
-## Release
-
-From the monorepo, tag and push. Composer reads the version from the tag.
-
-```bash
-git tag laravel/v0.2.0
-git push origin laravel/v0.2.0
-```
-
-CI copies `packages/laravel` to the `gaze-laravel` repo with tag `v0.2.0`, and Packagist picks it up. If the release needs a newer `gaze-php`, release that first and raise the `thewonderjoy/gaze-php` constraint in `composer.json`. Full steps: `RELEASING.md` in the monorepo.
+Ray methods that gaze-php doesn't have are listed in its README. If you'd rather not rename your calls, set `GAZE_DEFINE_RAY_HELPER=true` after removing laravel-ray, and `ray()` goes to Gaze. A call to one of the missing methods then throws an error.
 
 ## License
 

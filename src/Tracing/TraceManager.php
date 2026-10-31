@@ -240,20 +240,23 @@ final class TraceManager
         return $path === $relay || GazeManager::matchesAny($path, (array) $this->gaze->config('traces.ignore_paths', []));
     }
 
-    /** Opens the trace of an HTTP request (continuing an incoming W3C traceparent). */
+    /**
+     * Opens the trace of an HTTP request. With an incoming W3C traceparent (a gaze-js page or
+     * server, or any OpenTelemetry client) the trace keeps a new id of its own and takes the
+     * caller's span id as parent, which the app resolves to the call that caused it. Adopting the
+     * W3C trace id instead would merge every request of one distributed trace into one.
+     */
     public function startRequest(Request $request): Trace
     {
         $name = $request->getMethod() . ' /' . ltrim($request->path(), '/');
-        $id = null;
         $parent = null;
         $header = (string) $request->headers->get('traceparent', '');
         if ($header !== '' && GazeManager::bool($this->gaze->config('traces.accept_traceparent', true))
             && preg_match('/^[0-9a-f]{2}-([0-9a-f]{32})-([0-9a-f]{16})-[0-9a-f]{2}$/', strtolower(trim($header)), $m)
-            && $m[1] !== str_repeat('0', 32)) {
-            $id = $m[1];
+            && $m[1] !== str_repeat('0', 32) && $m[2] !== str_repeat('0', 16)) {
             $parent = $m[2];
         }
-        $trace = $this->start('http', $name, $parent, $id);
+        $trace = $this->start('http', $name, $parent);
         $request->attributes->set('_gaze_trace', $trace);
 
         return $trace;

@@ -94,25 +94,16 @@ final class GazeManager
     /** gaze.enabled, or (null) everywhere but production. */
     public function enabled(): bool
     {
-        $enabled = $this->config('enabled');
-        if ($enabled === null || $enabled === '') {
-            return !$this->app->isProduction();
-        }
-
-        return self::bool($enabled);
+        return GazeServiceProvider::enabled($this->app);
     }
 
     public static function bool(mixed $value): bool
     {
-        if (is_bool($value)) {
-            return $value;
-        }
-
-        return filter_var($value, FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE) ?? (bool) $value;
+        return GazeServiceProvider::bool($value);
     }
 
     /**
-     * Configures the PHP client (also when disabled: gaze() then returns an inert instance).
+     * Configures the PHP client while Gaze is on (off, the provider switches gaze-php off without it).
      * Called in register() and again in boot(), in case configuration changed in between.
      */
     public function configureClient(): void

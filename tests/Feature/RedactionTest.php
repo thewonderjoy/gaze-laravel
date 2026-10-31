@@ -75,17 +75,21 @@ final class RedactionTest extends TestCase
         $this->assertBatchesValid();
     }
 
-    public function testATraceparentFromTheBrowserIsContinued(): void
+    public function testATraceparentFromTheBrowserLinksToItsCall(): void
     {
         Route::get('/api/ping', fn () => 'pong');
+        // Two calls of one distributed trace (as an OpenTelemetry page sends them), then garbage.
         $this->withHeaders(['traceparent' => '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01'])->get('/api/ping')->assertOk();
+        $this->withHeaders(['traceparent' => '00-4bf92f3577b34da6a3ce929d0e0e4736-b7ad6b7169203331-01'])->get('/api/ping')->assertOk();
         $this->withHeaders(['traceparent' => 'garbage'])->get('/api/ping')->assertOk();
 
         $summaries = $this->added('request');
-        $this->assertSame('4bf92f3577b34da6a3ce929d0e0e4736', $summaries[0]['trace']['id']);
         $this->assertSame('00f067aa0ba902b7', $summaries[0]['trace']['parent']);
-        $this->assertNotSame('4bf92f3577b34da6a3ce929d0e0e4736', $summaries[1]['trace']['id']);
-        $this->assertArrayNotHasKey('parent', $summaries[1]['trace']);
+        $this->assertSame('b7ad6b7169203331', $summaries[1]['trace']['parent']);
+        $ids = array_map(fn ($s) => $s['trace']['id'], $summaries);
+        $this->assertCount(3, array_unique($ids), 'each request keeps a trace of its own');
+        $this->assertNotContains('4bf92f3577b34da6a3ce929d0e0e4736', $ids);
+        $this->assertArrayNotHasKey('parent', $summaries[2]['trace']);
         $this->assertBatchesValid();
     }
 
