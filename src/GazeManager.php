@@ -31,7 +31,7 @@ use TheWonderJoy\Gaze\Support\Origin;
  */
 final class GazeManager
 {
-    public const VERSION = '1.0.0';
+    public const VERSION = '1.0.1';
 
     public const CLIENT_NAME = 'thewonderjoy/gaze-laravel';
 
