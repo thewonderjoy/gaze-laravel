@@ -134,7 +134,9 @@ final class GazeMixin
         return function () {
             /** @var Gaze $this */
             if ($this->enabled() && app()->bound(GazeManager::class)) {
-                app(GazeManager::class)->disable('slow_queries');
+                $manager = app(GazeManager::class);
+                $manager->disable('slow_queries');
+                $manager->watcher(QueryWatcher::class)->slowThresholdMs = null; // back to queries.slow_threshold_ms
             }
 
             return $this;

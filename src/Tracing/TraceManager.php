@@ -180,7 +180,10 @@ final class TraceManager
         $this->listenForOctane();
     }
 
-    /** Without job traces: still drain the client after each job (queue workers never exit). */
+    /**
+     * Without job traces: still re-read the app's switches before each job and drain the client after
+     * it (queue workers never exit).
+     */
     public function listenForDrain(): void
     {
         if ($this->draining) {
@@ -188,6 +191,9 @@ final class TraceManager
         }
         $this->draining = true;
         $events = $this->gaze->events();
+        $events->listen(JobProcessing::class, function (): void {
+            $this->gaze->refreshRemote();
+        });
         $drain = static function (): void {
             Client::current()?->drain();
         };

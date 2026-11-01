@@ -58,7 +58,16 @@ final class QueryWatcher extends Watcher
 
     public function slowThreshold(): float
     {
-        return $this->slowThresholdMs ?? (float) $this->gaze->config('queries.slow_threshold_ms', 500);
+        $ms = $this->slowThresholdMs ?? $this->gaze->config('queries.slow_threshold_ms', 500);
+
+        return is_numeric($ms) ? (float) $ms : 500.0; // a blank GAZE_SLOW_QUERY_MS= is not 0
+    }
+
+    public function nPlusOneThreshold(): int
+    {
+        $runs = $this->gaze->config('queries.n_plus_one_threshold', 3);
+
+        return is_numeric($runs) ? max(1, (int) $runs) : 3;
     }
 
     /**
@@ -276,7 +285,7 @@ final class QueryWatcher extends Watcher
         if ($group['count'] === 2) {
             $group['relation'] = self::lazyRelation();
         }
-        $threshold = max(1, (int) $this->gaze->config('queries.n_plus_one_threshold', 3));
+        $threshold = $this->nPlusOneThreshold();
         $isNPlusOne = $group['count'] > $threshold;
         if ($isNPlusOne && $group['count'] === $threshold + 1) {
             ++$trace->nPlusOne;
@@ -348,7 +357,7 @@ final class QueryWatcher extends Watcher
         }
         $body['n_plus_one'] = array_filter([
             'count' => $group['count'],
-            'threshold' => max(1, (int) $this->gaze->config('queries.n_plus_one_threshold', 3)),
+            'threshold' => $this->nPlusOneThreshold(),
             'relation' => $group['relation'],
         ], static fn ($v) => $v !== null);
         // No label: the app derives the "N+1 ×count" badge from the n+1 flag and the executions.

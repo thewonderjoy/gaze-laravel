@@ -89,7 +89,7 @@ Each watcher in the list below has three methods. With queries as the example:
 | Watcher | Sends |
 |---|---|
 | `Queries` | every query |
-| `DuplicateQueries`, `SlowQueries($ms)` | only repeated queries, or only queries slower than `$ms` (default 500) |
+| `DuplicateQueries`, `SlowQueries($ms)` | only repeated queries, or only queries that take `$ms` or longer (default `GAZE_SLOW_QUERY_MS`, 500) |
 | `SelectQueries`, `InsertQueries`, `UpdateQueries`, `DeleteQueries` | only that type of query |
 | `Events`, `Exceptions`, `Jobs`, `Cache`, `Views`, `Mails`, `Dumps`, `Logs`, `Deprecations` | that watcher's entries |
 | `Requests`, `HttpClientRequests` | incoming request details, or outgoing HTTP calls |
@@ -155,7 +155,15 @@ You can switch each watcher in `config/gaze.php`, with an env variable, or for p
 
 When the same query runs again and again (N+1), the app folds the runs into one row that lists each of them. A watcher that is off registers nothing, so it costs nothing.
 
-With `queries` off you can still send some of them: `GAZE_DUPLICATE_QUERIES`, `GAZE_SLOW_QUERIES` (threshold `GAZE_SLOW_QUERY_MS`, default 500), and `GAZE_SELECT_QUERIES`, `GAZE_INSERT_QUERIES`, `GAZE_UPDATE_QUERIES`, `GAZE_DELETE_QUERIES`.
+The query switches add up: a query is sent when any of them matches it. `queries` sends every query, so while it's on, the switches below change nothing. `GAZE_INSERT_QUERIES=false` doesn't hide inserts. To see only some queries, turn `queries` off and switch on the ones you want:
+
+| Env | Sends |
+|---|---|
+| `GAZE_DUPLICATE_QUERIES` | a query that already ran with the same bindings in this request |
+| `GAZE_SLOW_QUERIES` | queries that take `GAZE_SLOW_QUERY_MS` or longer (default 500) |
+| `GAZE_SELECT_QUERIES`, `GAZE_INSERT_QUERIES`, `GAZE_UPDATE_QUERIES`, `GAZE_DELETE_QUERIES` | that kind of statement |
+
+For example, `GAZE_QUERIES=false` with `GAZE_SLOW_QUERIES=true` sends only slow queries. Request summaries still count every query while any query switch is on, but N+1 detection only sees the queries that are sent. With every query switch off, request summaries show no query count and exceptions don't list the last queries.
 
 ## Secrets are masked
 

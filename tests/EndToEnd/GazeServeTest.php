@@ -247,4 +247,41 @@ final class GazeServeTest extends TestCase
         $this->assertContains('n+1', $grouped['flags'], 'client flags are merged by the core');
         $this->assertNull($grouped['label'], 'the badge is derived by the app, not sent as a label');
     }
+
+    /**
+     * The app shows the slow badge gaze-laravel decided with GAZE_SLOW_QUERY_MS, not its own 100 ms:
+     * at 500 ms a 177 ms query is not slow, a 600 ms one is.
+     */
+    public function testTheCoreKeepsTheSlowDecisionOfGazeLaravel(): void
+    {
+        $this->app['config']->set('gaze.queries.slow_threshold_ms', 500);
+        Route::get('/slow-check', function () {
+            foreach ([177.0, 600.0, 20.0] as $ms) {
+                event(new \Illuminate\Database\Events\QueryExecuted("select $ms as ms", [], $ms, DB::connection()));
+            }
+
+            return 'ok';
+        });
+
+        $this->get('/slow-check')->assertOk();
+        $this->flushGaze();
+
+        $deadline = microtime(true) + 15;
+        do {
+            $state = $this->serverState();
+            $http = array_values(array_filter($state['traces'], static fn ($t) => $t['name'] === 'GET /slow-check' && $t['endedAt'] !== null));
+            usleep($http === [] ? 100000 : 0);
+        } while ($http === [] && microtime(true) < $deadline);
+
+        $this->assertCount(1, $http);
+        $slow = [];
+        foreach ($state['entries'] as $e) {
+            if ($e['traceId'] === $http[0]['id'] && $e['kind'] === 'query') {
+                $slow[$e['body']['sql']] = in_array('slow', $e['flags'], true);
+            }
+        }
+        ksort($slow);
+        $this->assertSame(['select 177 as ms' => false, 'select 20 as ms' => false, 'select 600 as ms' => true], $slow);
+        $this->assertSame(1, $http[0]['summary']['slow'], 'the trace counts one slow query');
+    }
 }

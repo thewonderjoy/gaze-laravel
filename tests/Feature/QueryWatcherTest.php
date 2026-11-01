@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace TheWonderJoy\Gaze\Laravel\Tests\Feature;
 
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Session\DatabaseSessionHandler;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
@@ -146,6 +147,30 @@ final class QueryWatcherTest extends TestCase
         $this->assertCount(2, $flags);
         $this->assertContains('slow', $flags[0], 'slow at 0 ms inside the callback');
         $this->assertNotContains('slow', $flags[1], 'the configured 10 s threshold again afterwards');
+    }
+
+    public function testStopShowingSlowQueriesPutsTheThresholdBack(): void
+    {
+        $this->app['config']->set('gaze.queries.slow_threshold_ms', 500);
+        gaze()->showSlowQueries(0);
+        gaze()->stopShowingSlowQueries();
+        event(new QueryExecuted('select 1', [], 5.0, DB::connection()));
+
+        $q = $this->added('query')[0];
+        $this->assertNotContains('slow', $q['body']['flags'], 'README: stopShowingSlowQueries() turns it off; a 5 ms query is not slow at 500');
+        $this->assertNotSame('red', $q['color'] ?? null);
+    }
+
+    public function testShowSlowQueriesWithoutMillisecondsUsesTheConfiguredThreshold(): void
+    {
+        $this->manager()->disable('queries');
+        $this->app['config']->set('gaze.queries.slow_threshold_ms', 200);
+        gaze()->showSlowQueries();
+        foreach ([199.0, 200.0, 800.0] as $ms) {
+            event(new QueryExecuted("select $ms", [], $ms, DB::connection()));
+        }
+
+        $this->assertSame(['select 200', 'select 800'], array_map(static fn ($q) => $q['body']['template'], $this->added('query')));
     }
 
     public function testTypeWatchersSelectByStatementIncludingCtesAndComments(): void
