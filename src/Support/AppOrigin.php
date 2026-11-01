@@ -16,13 +16,30 @@ use TheWonderJoy\Gaze\Support\Origin;
  * Unlike laravel-ray there are no per-watcher frame offsets: a query, a mail, a dump or a cache
  * hit all resolve to the app code that caused it.
  *
+ * When Laravel or a package did the work with no app code on the stack (the session middleware,
+ * the auth guard loading the user and the relations it always loads), the first app frame is the
+ * entry script (public/index.php:17 for every request). The origin is then the framework or
+ * package code that asked for it, outside Laravel's machinery (MACHINERY), and the entry script
+ * follows in the frames.
+ *
  * @internal
  */
 final class AppOrigin
 {
+    /**
+     * Parts of Laravel that only carry a call on: the database, events, the middleware pipeline,
+     * the container and support code, and the layers watchers listen to (cache, log, mail, view,
+     * Redis, the HTTP client). laravel/framework paths (src/Illuminate/Database) and the split
+     * packages (illuminate/database) both match.
+     */
+    private const MACHINERY = '~/illuminate/(database|events|pipeline|container|support|collections|macroable|conditionable|cache|log|mail|view|redis|http/client)/~i';
+
     public static bool $skipVendor = true;
 
     public static ?string $compiledPath = null;
+
+    /** @var list<string> the app's entry scripts (public/index.php, artisan): never an origin on their own */
+    public static array $entryScripts = [];
 
     /** @var array<string, string|null> compiled view file => .blade.php path */
     private static array $blade = [];
@@ -40,30 +57,83 @@ final class AppOrigin
             if ($file === null || self::skip($file)) {
                 continue;
             }
-            $origin = self::point($trace[$i], $trace[$i + 1] ?? null);
-            if ($extraFrames > 0) {
-                $frames = [];
-                for ($j = $i + 1; $j < $n && count($frames) < $extraFrames; ++$j) {
-                    $f = $trace[$j]['file'] ?? null;
-                    if ($f === null || Origin::isInternal($f) || Origin::isVendor($f)) {
-                        continue;
-                    }
-                    $frame = Origin::frame($trace[$j], $trace[$j + 1] ?? null);
-                    $mapped = self::blade($frame['file']);
-                    if ($mapped !== null) {
-                        $frame['file'] = $mapped;
-                    }
-                    $frames[] = $frame;
-                }
-                if ($frames) {
-                    $origin['frames'] = $frames;
-                }
+            if (self::isEntryScript($file)) {
+                $i = self::framework($trace, $i) ?? $i;
             }
 
-            return $origin;
+            return self::at($trace, $i, $extraFrames);
+        }
+        // no app frame at all: a worker loop in vendor, or a stack deeper than the frames read
+        $i = self::framework($trace, $n);
+
+        return $i === null ? null : self::at($trace, $i, $extraFrames);
+    }
+
+    /**
+     * The origin at frame $i, with up to $extraFrames app frames further out.
+     *
+     * @param list<array<string, mixed>> $trace
+     * @return array<string, mixed>
+     */
+    private static function at(array $trace, int $i, int $extraFrames): array
+    {
+        $n = count($trace);
+        $origin = self::point($trace[$i], $trace[$i + 1] ?? null);
+        if ($extraFrames > 0) {
+            $frames = [];
+            for ($j = $i + 1; $j < $n && count($frames) < $extraFrames; ++$j) {
+                $f = $trace[$j]['file'] ?? null;
+                if ($f === null || Origin::isInternal($f) || Origin::isVendor($f)) {
+                    continue;
+                }
+                $frame = Origin::frame($trace[$j], $trace[$j + 1] ?? null);
+                $mapped = self::blade($frame['file']);
+                if ($mapped !== null) {
+                    $frame['file'] = $mapped;
+                }
+                $frames[] = $frame;
+            }
+            if ($frames) {
+                $origin['frames'] = $frames;
+            }
+        }
+
+        return $origin;
+    }
+
+    /**
+     * The innermost frame before $before whose call site is Laravel or package code outside
+     * MACHINERY and not Gaze's own: the code that asked for the work.
+     *
+     * @param list<array<string, mixed>> $trace
+     */
+    private static function framework(array $trace, int $before): ?int
+    {
+        for ($k = 1; $k < $before; ++$k) {
+            $file = $trace[$k]['file'] ?? null;
+            if ($file === null) {
+                continue;
+            }
+            $path = str_replace('\\', '/', $file);
+            $gaze = Origin::isInternal($file) && stripos($path, '/illuminate/') === false;
+            if (!$gaze && !preg_match(self::MACHINERY, $path)) {
+                return $k;
+            }
         }
 
         return null;
+    }
+
+    private static function isEntryScript(string $file): bool
+    {
+        $norm = static fn (string $p): string => PHP_OS_FAMILY === 'Windows' ? strtolower(str_replace('\\', '/', $p)) : $p;
+        foreach (self::$entryScripts as $script) {
+            if ($norm($script) === $norm($file)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

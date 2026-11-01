@@ -63,6 +63,10 @@ return [
 
         // Runs kept per grouped entry (the count keeps going).
         'max_executions' => 200,
+
+        // Queries run by code in these namespaces are left out: Telescope and Pulse write what
+        // they recorded at the end of every request. Matched against the call stack.
+        'ignore_namespaces' => ['Laravel\Telescope\\', 'Laravel\Pulse\\'],
     ],
 
     'traces' => [
@@ -75,7 +79,9 @@ return [
         // Link a request to the call that sent its W3C traceparent (a gaze-js page or server).
         'accept_traceparent' => true,
 
-        // Request paths (Str::is patterns) that get no trace.
+        // Request paths (Str::is patterns) Gaze ignores: no trace, and the watchers send nothing
+        // for them, not even from terminating callbacks (gaze() calls still arrive). The
+        // Telescope, Horizon and Pulse dashboards poll these.
         'ignore_paths' => ['_gaze', 'telescope*', 'horizon*', '_debugbar*', '_ignition*', 'pulse*', 'favicon.ico'],
 
         // Long-running or noisy commands that get no trace (jobs they run still get their own).
@@ -101,11 +107,14 @@ return [
     'define_ray_helper' => env('GAZE_DEFINE_RAY_HELPER', false),
 
     // POST /<path> forwards batches from pages that cannot reach the app directly
-    // (@thewonderjoy/gaze-js). Registered only when Gaze is enabled and APP_ENV=local.
+    // (@thewonderjoy/gaze-js). Registered only when Gaze is enabled and APP_ENV=local. It answers
+    // requests for localhost, *.localhost, *.test, IP addresses, APP_URL's host and `hosts`
+    // (comma-separated), so a page on another site cannot reach it through DNS rebinding.
     'relay' => [
         'enabled' => env('GAZE_RELAY', true),
         'path' => '_gaze',
         'max_bytes' => 1048576,
+        'hosts' => env('GAZE_RELAY_HOSTS', ''),
     ],
 
     // Entry origins skip framework and vendor frames, so they point at the first app frame.

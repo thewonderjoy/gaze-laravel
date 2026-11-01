@@ -32,6 +32,9 @@ final class QueryWatcher extends Watcher
 {
     public const SWITCHES = ['queries', 'duplicate_queries', 'slow_queries', 'insert_queries', 'select_queries', 'update_queries', 'delete_queries'];
 
+    /** queries.ignore_namespaces when the published config predates it. */
+    public const IGNORE_NAMESPACES = ['Laravel\Telescope\\', 'Laravel\Pulse\\'];
+
     /** @var array<string, \Closure(QueryExecuted): bool> named conditional watchers */
     public array $conditions = [];
 
@@ -81,7 +84,7 @@ final class QueryWatcher extends Watcher
 
     public function handle(QueryExecuted $event): void
     {
-        if (GazeManager::sending()) {
+        if (GazeManager::sending() || $this->gaze->inIgnoredRequest()) {
             return;
         }
         $sql = (string) $event->sql;
@@ -138,13 +141,43 @@ final class QueryWatcher extends Watcher
                 }
             }
         }
-        if (!$send) {
+        if (!$send || $this->fromIgnoredNamespace()) {
             return;
         }
         try {
             $this->emit($event, $trace, $fingerprint, $prepared, $time, $dup, $slow);
         } catch (\Throwable) {
         }
+    }
+
+    /**
+     * Run by a tool for itself (queries.ignore_namespaces): Telescope and Pulse store what they
+     * recorded when a request ends. Looked up only for a query that would be sent, which already
+     * pays for a backtrace (its origin).
+     */
+    private function fromIgnoredNamespace(): bool
+    {
+        $prefixes = [];
+        foreach ((array) $this->gaze->config('queries.ignore_namespaces', self::IGNORE_NAMESPACES) as $prefix) {
+            if (is_string($prefix) && trim($prefix, '\\') !== '') {
+                $prefixes[] = trim($prefix, '\\') . '\\';
+            }
+        }
+        if ($prefixes === []) {
+            return false;
+        }
+        foreach (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 120) as $frame) {
+            if (!isset($frame['class'])) {
+                continue;
+            }
+            foreach ($prefixes as $prefix) {
+                if (str_starts_with($frame['class'], $prefix)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /** @return list<mixed> */
@@ -221,10 +254,12 @@ final class QueryWatcher extends Watcher
             $mods = $this->mods($flags, $origin);
             $body['flags'] = $flags;
             $id = $this->gaze->send('query', $body, $this->modifiers + $mods);
+            // 'modifiers': the group is this entry, so it keeps them when it is sent again later
+            // (at trace end), even if showQueries()->...() changed them since.
             $trace->groups[$fingerprint] = [
                 'id' => $id, 'body' => $body, 'origin' => $origin, 'count' => 1, 'rows' => [],
                 'executions' => [$execution], 'dup' => $dup, 'slow' => $slow, 'grouped' => false, 'dirty' => false,
-                'relation' => null, 'total_ms' => $time,
+                'relation' => null, 'total_ms' => $time, 'modifiers' => $this->modifiers,
             ];
 
             return;
@@ -319,7 +354,7 @@ final class QueryWatcher extends Watcher
         // No label: the app derives the "N+1 ×count" badge from the n+1 flag and the executions.
         $mods = $this->mods($flags, $group['origin']);
         $mods['color'] ??= 'orange';
-        $this->gaze->send('query', $body, $this->modifiers + $mods, $group['id']);
+        $this->gaze->send('query', $body, $group['modifiers'] + $mods, $group['id']);
     }
 
     /**

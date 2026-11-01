@@ -55,6 +55,40 @@ final class RelayTest extends TestCase
         $this->assertSame([], array_filter($this->requests(), static fn ($r) => $r['method'] === 'POST'));
     }
 
+    public function testOtherSitesCannotPost(): void
+    {
+        $json = ['CONTENT_TYPE' => 'text/plain'];
+        // A sandboxed frame on any site sends Origin: null.
+        $this->call('POST', '/_gaze', [], [], [], $json + ['HTTP_ORIGIN' => 'null'], $this->batch())->assertStatus(403);
+        // DNS rebinding: the page's own domain now resolves here, and Origin matches it.
+        $rebound = $this->call('POST', 'http://attacker.example:8000/_gaze', [], [], [], $json + ['HTTP_ORIGIN' => 'http://attacker.example:8000'], $this->batch());
+        $rebound->assertStatus(403);
+        $this->assertStringContainsString('host attacker.example', (string) $rebound->getContent());
+        $this->assertSame([], array_filter($this->requests(), static fn ($r) => $r['method'] === 'POST'));
+    }
+
+    public function testHostsThisMachineNamesAreRelayed(): void
+    {
+        $this->app['config']->set('app.url', 'https://shop.ddev.site');
+        $this->app['config']->set('gaze.relay.hosts', 'tunnel.example.com, other.example');
+        foreach (['shop.ddev.site', 'tunnel.example.com', '192.168.1.20:8000', '[::1]:8000', 'shop.test', 'admin.localhost'] as $host) {
+            $origin = 'http://' . $host;
+            $response = $this->call('POST', $origin . '/_gaze', [], [], [], ['CONTENT_TYPE' => 'text/plain', 'HTTP_ORIGIN' => $origin], $this->batch());
+            $this->assertSame(202, $response->getStatusCode(), $host . ': ' . $response->getContent());
+        }
+    }
+
+    public function testTheRouteIsCheckedAgainOnEveryRequest(): void
+    {
+        // route:cache keeps the route after .env turns Gaze off or leaves the local environment.
+        $this->app['config']->set('gaze.enabled', false);
+        $this->call('POST', '/_gaze', [], [], [], ['CONTENT_TYPE' => 'application/json'], $this->batch())->assertNotFound();
+        $this->app['config']->set('gaze.enabled', true);
+        $this->app['env'] = 'production';
+        $this->call('POST', '/_gaze', [], [], [], ['CONTENT_TYPE' => 'application/json'], $this->batch())->assertNotFound();
+        $this->assertSame([], array_filter($this->requests(), static fn ($r) => $r['method'] === 'POST'));
+    }
+
     public function testAnUnreachableAppIsA502(): void
     {
         $this->app['config']->set('gaze.port', 23649);

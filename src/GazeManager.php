@@ -31,7 +31,7 @@ use TheWonderJoy\Gaze\Support\Origin;
  */
 final class GazeManager
 {
-    public const VERSION = '0.1.0';
+    public const VERSION = '1.0.0';
 
     public const CLIENT_NAME = 'thewonderjoy/gaze-laravel';
 
@@ -171,6 +171,7 @@ final class GazeManager
         AppOrigin::$skipVendor = self::bool($this->config('origin.skip_vendor', true));
         $compiled = $this->app['config']->get('view.compiled');
         AppOrigin::$compiledPath = is_string($compiled) ? $compiled : null;
+        AppOrigin::$entryScripts = [$this->app->publicPath('index.php'), $this->app->basePath('artisan')];
 
         $this->resolveSwitches();
         // traces first: a watcher's JobProcessing entry must already belong to the job's trace
@@ -355,7 +356,7 @@ final class GazeManager
      */
     public function send(string $kind, array|\stdClass $body, array $modifiers = [], ?string $updateId = null): ?string
     {
-        if (self::$sending) {
+        if (self::$sending || $this->inIgnoredRequest()) {
             return null;
         }
         self::$sending = true;
@@ -394,6 +395,26 @@ final class GazeManager
     public static function sending(): bool
     {
         return self::$sending;
+    }
+
+    /**
+     * In a request on an ignored path (traces.ignore_paths: the Telescope, Horizon and Pulse
+     * dashboards, the relay): the watchers send nothing for it, its terminating callbacks
+     * included. gaze() calls still arrive. Decided once per request.
+     */
+    public function inIgnoredRequest(): bool
+    {
+        $request = $this->app->bound('request') ? $this->app['request'] : null;
+        if (!$request instanceof Request) {
+            return false;
+        }
+        $ignored = $request->attributes->get('_gaze_ignored');
+        if (!is_bool($ignored)) {
+            $ignored = $this->traces()->ignoresRequest($request);
+            $request->attributes->set('_gaze_ignored', $ignored);
+        }
+
+        return $ignored;
     }
 
     /** Builds a body while ignoring watcher events it triggers (rendering, casting, ...). */

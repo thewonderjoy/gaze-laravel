@@ -1,21 +1,42 @@
 # thewonderjoy/gaze-laravel
 
-See what your Laravel app is doing in the Gaze desktop app: your own `gaze()` calls, plus queries, logs, exceptions, mails, jobs and more, grouped by the request (or job, command, test) they came from.
+See what your Laravel app is doing in the Gaze desktop app. You get your own `gaze()` calls plus queries, logs, exceptions, mails, jobs and more, grouped by the request, job, command or test they came from.
 
-Gaze is a fast debug window for PHP, Laravel and JavaScript (Windows first). This package builds on [`thewonderjoy/gaze-php`](https://packagist.org/packages/thewonderjoy/gaze-php).
+Gaze is a desktop debug window for PHP, Laravel and JavaScript apps, on Mac, Windows and Linux. This package builds on [`thewonderjoy/gaze-php`](https://packagist.org/packages/thewonderjoy/gaze-php).
 
-![The Gaze window showing one Laravel request with all its queries, and an N+1 query open in the inspector with the advice to eager-load and the list of its 12 runs](art/gaze-laravel.png)
+**Get the app:** download Gaze from [thewonderjoy.com/products/gaze](https://thewonderjoy.com/products/gaze).
 
-Requires PHP 8.2+ and Laravel 12 or 13. Off in production unless you set `GAZE_ENABLED=true`.
+![The Gaze window showing one Laravel request with all its queries, and an N+1 query open in the inspector with the advice to eager-load and the list of its 12 runs, shown half in the light theme and half in the dark theme](https://raw.githubusercontent.com/thewonderjoy/gaze-laravel/main/art/gaze-laravel.png)
+
+## Install
 
 ```bash
 composer require thewonderjoy/gaze-laravel
-php artisan gaze:doctor    # checks that this app can reach Gaze
 ```
 
-This is a normal dependency, as spatie/laravel-ray recommends. In production Gaze is off: it registers nothing, sends nothing and loads nothing but its service provider and a no-op, so a `gaze()`, `gaze_dd()`, `->gaze()` or `@gaze` you forgot to remove does nothing (`gaze_dd()` doesn't exit). If you add `--dev` instead, a forgotten call becomes a fatal error in production, so run `php artisan gaze:clean` before you deploy.
+It needs PHP 8.2+ and Laravel 12 or 13. Laravel finds the service provider by itself. Open the [Gaze app](https://thewonderjoy.com/products/gaze), then check that your app can reach it:
 
-The service provider is discovered automatically. To change settings, publish the config: `php artisan vendor:publish --tag=gaze-config`.
+```bash
+php artisan gaze:doctor
+```
+
+If it can't, for example under Sail, Docker or WSL, or because Gaze runs on another port, the command prints the `.env` lines to add. To change settings, publish the config with `php artisan vendor:publish --tag=gaze-config`.
+
+### Normal or `--dev`?
+
+Install it as a normal dependency, as above. `--dev` keeps the package off your servers, but then a call you forgot to remove breaks there:
+
+| | `composer require` | `composer require --dev` |
+|---|---|---|
+| In production | Installed but off. Only its service provider and a no-op load, and nothing is registered or sent. | Not installed (`composer install --no-dev`) |
+| A `gaze()` or `gaze_dd()` you forgot | Does nothing. `gaze_dd()` doesn't exit. | Fatal error: `Call to undefined function gaze()` |
+| A `->gaze()` you forgot on a collection, string or query | Does nothing | `BadMethodCallException` |
+| A `@gaze` you forgot in a view | Renders nothing | Shows up as `@gaze(...)` text on the page |
+| Before you deploy | Nothing to do | Run `php artisan gaze:clean` to remove `gaze()` and `gaze_dd()` calls. Remove `->gaze()` and `@gaze` by hand. |
+
+### Environments
+
+Gaze is off when `APP_ENV=production` and on everywhere else, staging and testing included. Set `GAZE_ENABLED=false` on servers where you don't want it. To use it in production for a while, set `GAZE_ENABLED=true`.
 
 ## Use
 
@@ -39,7 +60,7 @@ $this->get('/orders')->gaze()->assertOk();  // on test responses
 
 ## Methods
 
-`gaze()` has every method of [gaze-php](https://packagist.org/packages/thewonderjoy/gaze-php) (values, colours, tables, `pause()`, `measure()`, `count()`, screens and so on). This package adds the Laravel ones, with the same names as spatie/laravel-ray.
+`gaze()` has every method of [gaze-php](https://packagist.org/packages/thewonderjoy/gaze-php): values, colours, tables, `pause()`, `measure()`, `count()`, screens and the rest. This package adds the Laravel ones below.
 
 **Laravel values**
 
@@ -55,13 +76,13 @@ $this->get('/orders')->gaze()->assertOk();  // on test responses
 | `testResponse($response)` | A test response: status, headers, body and decoded JSON. |
 | `countQueries(fn () => ...)` | Runs the closure, shows how many queries it ran and how long they took, and returns its result. |
 
-**Watcher switches**
+**Turn a watcher on for part of your code**
 
-Every watcher in the second table has the same three methods. This table uses `Queries` as the example.
+Each watcher in the list below has three methods. With queries as the example:
 
 | Method | What it does |
 |---|---|
-| `showQueries()` | Turns the watcher on from here. Returns an object for styling its entries: `gaze()->showQueries()->red()`. |
+| `showQueries()` | Turns the watcher on from here. It returns an object you can style: `gaze()->showQueries()->red()`. |
 | `showQueries(fn () => ...)` | Turns it on only while the closure runs, and returns the closure's result. |
 | `stopShowingQueries()` | Turns it off. |
 
@@ -71,11 +92,11 @@ Every watcher in the second table has the same three methods. This table uses `Q
 | `DuplicateQueries`, `SlowQueries($ms)` | only repeated queries, or only queries slower than `$ms` (default 500) |
 | `SelectQueries`, `InsertQueries`, `UpdateQueries`, `DeleteQueries` | only that type of query |
 | `Events`, `Exceptions`, `Jobs`, `Cache`, `Views`, `Mails`, `Dumps`, `Logs`, `Deprecations` | that watcher's entries |
-| `Requests`, `HttpClientRequests` | incoming request details, outgoing HTTP calls |
+| `Requests`, `HttpClientRequests` | incoming request details, or outgoing HTTP calls |
 
-Short forms, as in laravel-ray: `queries()`, `slowQueries()`, `events()`, `jobs()`, `views()`, `requests()`, `httpClientRequests()`.
+Short forms: `queries()`, `slowQueries()`, `events()`, `jobs()`, `views()`, `requests()`, `httpClientRequests()`.
 
-`showConditionalQueries(fn (QueryExecuted $query) => ..., $callback = null, $name = 'default')` sends only the queries the condition accepts. Stop it with `stopShowingConditionalQueries($name)`.
+To send only some queries, pass a condition: `showConditionalQueries(fn (QueryExecuted $query) => ..., $callback = null, $name = 'default')`. Stop it with `stopShowingConditionalQueries($name)`.
 
 **On other objects**
 
@@ -86,7 +107,7 @@ Short forms, as in laravel-ray: `queries()`, `slowQueries()`, `events()`, `jobs(
 | `User::where(...)->gaze($label = '')` | the SQL with bindings, before it runs |
 | `$this->get('/')->gaze()` | the test response, as `testResponse()` does |
 
-Each one returns the object it was called on, so you can keep chaining.
+Each one returns the object you called it on, so you can keep chaining.
 
 **Blade**
 
@@ -98,7 +119,9 @@ Each one returns the object it was called on, so you can keep chaining.
 
 ## Traces
 
-Everything that happens during one request ends up together in the app, with a summary at the end (status, time, memory, query count, N+1 warnings). The same goes for queued jobs, artisan commands and tests. A job shows which request dispatched it.
+Everything that happens during one request ends up together in the app, closed by a summary with the status, time, memory, query count and any N+1 warnings. Queued jobs, artisan commands and tests work the same way, and a job shows which request dispatched it.
+
+A request sent from the browser links back to the call that sent it, so its trace shows `from browser POST /api/cart`. Gaze reads the W3C `traceparent` header for this, which [gaze-js](https://github.com/thewonderjoy/gaze-js#link-browser-calls-to-server-requests) adds to the page's `fetch` and XHR calls once its network capture is on. There's nothing to set up on the Laravel side. To turn it off, set `traces.accept_traceparent` to `false` in `config/gaze.php`.
 
 To get one trace per test, add the trait to your base test case:
 
@@ -113,49 +136,48 @@ abstract class TestCase extends BaseTestCase
 
 ## Watchers
 
-Each watcher can be switched in `config/gaze.php`, with an env variable, or for part of your code with `gaze()->showX()`.
+You can switch each watcher in `config/gaze.php`, with an env variable, or for part of your code with `gaze()->showX()`.
 
 | Watcher | Env | Default | Sends |
 |---|---|---|---|
 | exceptions | `GAZE_EXCEPTIONS` | on | reported exceptions, with code snippets and the last queries |
-| logs | `GAZE_LOGS` | on | log messages (errors in red, warnings in orange) |
+| logs | `GAZE_LOGS` | on | log messages, errors in red and warnings in orange |
 | mails | `GAZE_MAILS` | on | sent mails, rendered |
 | dumps | `GAZE_DUMPS` | on | `dump()` and `dd()` output |
-| queries | `GAZE_QUERIES` | on | SQL with bindings and time; flags duplicates, slow queries and N+1 |
+| queries | `GAZE_QUERIES` | on | SQL with bindings and time, flagging duplicates, slow queries and N+1 |
 | jobs | `GAZE_JOBS` | off | queued and processed jobs |
 | events | `GAZE_EVENTS` | off | dispatched events |
 | views | `GAZE_VIEWS` | off | rendered views and their data |
 | cache | `GAZE_CACHE` | off | hits, misses, writes, deletes |
-| requests | `GAZE_REQUESTS` | off | headers, payload and session on the request summary |
+| requests | `GAZE_REQUESTS` | off | headers, payload and session, on the request summary |
 | http_client | `GAZE_HTTP_CLIENT` | off | outgoing HTTP calls with status and time |
 | deprecations | `GAZE_DEPRECATIONS` | off | PHP deprecation notices |
 
-Repeated queries (N+1) are folded into one row that lists every run. A watcher that is off registers nothing, so it costs nothing.
+When the same query runs again and again (N+1), the app folds the runs into one row that lists each of them. A watcher that is off registers nothing, so it costs nothing.
 
-With `queries` off you can still send part of them: `GAZE_DUPLICATE_QUERIES`, `GAZE_SLOW_QUERIES` (threshold: `GAZE_SLOW_QUERY_MS`, default 500), and `GAZE_SELECT_QUERIES`, `GAZE_INSERT_QUERIES`, `GAZE_UPDATE_QUERIES`, `GAZE_DELETE_QUERIES`.
+With `queries` off you can still send some of them: `GAZE_DUPLICATE_QUERIES`, `GAZE_SLOW_QUERIES` (threshold `GAZE_SLOW_QUERY_MS`, default 500), and `GAZE_SELECT_QUERIES`, `GAZE_INSERT_QUERIES`, `GAZE_UPDATE_QUERIES`, `GAZE_DELETE_QUERIES`.
 
 ## Secrets are masked
 
-Before anything leaves your app, passwords, tokens, cookies, `Authorization` headers and `.env` secrets (`*_KEY`, `*_SECRET`, `*_PASSWORD`, `*_TOKEN`) are replaced with a mask. This is on by default; see `redact` in the config.
+Before anything leaves your app, Gaze masks passwords, tokens, cookies, `Authorization` headers and `.env` secrets (`*_KEY`, `*_SECRET`, `*_PASSWORD`, `*_TOKEN`). This is on by default. See `redact` in the config.
 
 ## Settings
 
 | Key | Env | Default |
 |---|---|---|
 | `enabled` | `GAZE_ENABLED` | on everywhere except production |
-| `host` | `GAZE_HOST`, then `RAY_HOST` | found automatically: 127.0.0.1, Docker/Sail host, WSL2 host |
-| `port` | `GAZE_PORT`, then `RAY_PORT` | 23517 |
+| `host` | `GAZE_HOST` | found automatically: 127.0.0.1, the Docker or Sail host, the WSL2 host |
+| `port` | `GAZE_PORT` | 23517 |
 | `project` | `GAZE_PROJECT` | `APP_NAME` |
-| `define_ray_helper` | `GAZE_DEFINE_RAY_HELPER` | `false`; `true` makes leftover `ray()` calls go to Gaze |
 
 `config/gaze.php` works with `php artisan config:cache`.
 
 ## Artisan commands
 
-- `php artisan gaze:doctor`: where PHP runs (Windows, WSL2, Docker, Sail), whether Gaze is on and why, which hosts answer, and the exact `.env` lines to add.
-- `php artisan gaze:clean [--dry-run]`: removes `gaze()` and `gaze_dd()` calls from `app`, `routes`, `config`, `resources`, `tests` and `database`.
+- `php artisan gaze:doctor` shows where PHP runs (Windows, WSL2, Docker, Sail), whether Gaze is on and why, which hosts answer, and the exact `.env` lines to add.
+- `php artisan gaze:clean [--dry-run]` removes `gaze()` and `gaze_dd()` calls from `app`, `routes`, `config`, `resources`, `tests` and `database`.
 
-## Coming from spatie/laravel-ray
+## Ray compatibility
 
 You can keep `spatie/laravel-ray` installed next to this package, because the Gaze app also accepts Ray's messages. To move over, replace `ray(` with `gaze(`. The method names are the same, apart from these:
 
@@ -169,7 +191,11 @@ You can keep `spatie/laravel-ray` installed next to this package, because the Ga
 | `loggedMail()` | not yet |
 | query watching is off by default | on by default, because traces and N+1 detection need it |
 
-Ray methods that gaze-php doesn't have are listed in its README. If you'd rather not rename your calls, set `GAZE_DEFINE_RAY_HELPER=true` after removing laravel-ray, and `ray()` goes to Gaze. A call to one of the missing methods then throws an error.
+The gaze-php README lists the Ray methods it doesn't have.
+
+If you'd rather not rename your calls, remove laravel-ray and set `GAZE_DEFINE_RAY_HELPER=true` (`define_ray_helper` in the config). Your `ray()` calls then go to Gaze. A call to one of the missing methods throws an error.
+
+`RAY_HOST` and `RAY_PORT` are read when `GAZE_HOST` and `GAZE_PORT` aren't set.
 
 ## License
 

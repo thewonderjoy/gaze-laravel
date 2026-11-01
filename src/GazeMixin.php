@@ -112,11 +112,20 @@ final class GazeMixin
     {
         return function (int|float|null $milliseconds = null, ?callable $callback = null) {
             /** @var Gaze $this */
-            if ($this->enabled() && app()->bound(GazeManager::class) && $milliseconds !== null) {
-                app(GazeManager::class)->watcher(QueryWatcher::class)->slowThresholdMs = (float) $milliseconds;
+            if (!$this->enabled() || !app()->bound(GazeManager::class) || $milliseconds === null) {
+                return GazeMixin::toggle($this, 'slow_queries', $callback);
             }
-
-            return GazeMixin::toggle($this, 'slow_queries', $callback);
+            $watcher = app(GazeManager::class)->watcher(QueryWatcher::class);
+            $before = $watcher->slowThresholdMs;
+            $watcher->slowThresholdMs = (float) $milliseconds;
+            if ($callback === null) {
+                return GazeMixin::toggle($this, 'slow_queries', null);
+            }
+            try {
+                return GazeMixin::toggle($this, 'slow_queries', $callback);
+            } finally {
+                $watcher->slowThresholdMs = $before; // like the switch, the threshold lasts for the callback only
+            }
         };
     }
 

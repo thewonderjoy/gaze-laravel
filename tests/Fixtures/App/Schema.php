@@ -41,6 +41,12 @@ final class Schema
             $t->longText('exception');
             $t->timestamp('failed_at')->useCurrent();
         });
+        S::create('sessions', function (Blueprint $t) {
+            $t->string('id')->primary();
+            $t->foreignId('user_id')->nullable();
+            $t->longText('payload');
+            $t->integer('last_activity');
+        });
     }
 
     /** @return list<User> */

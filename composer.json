@@ -4,12 +4,13 @@
     "type": "library",
     "license": "MIT",
     "keywords": ["laravel", "debug", "dump", "ray", "gaze", "queries", "n-plus-one", "tracing"],
+    "homepage": "https://thewonderjoy.com/products/gaze",
     "authors": [
         { "name": "thewonderjoy" }
     ],
     "support": {
-        "issues": "https://github.com/thewonderjoy/gaze/issues",
-        "source": "https://github.com/thewonderjoy/gaze/tree/main/packages/laravel"
+        "issues": "https://github.com/thewonderjoy/gaze-laravel/issues",
+        "source": "https://github.com/thewonderjoy/gaze-laravel"
     },
     "require": {
         "php": "^8.2",
@@ -22,7 +23,7 @@
         "illuminate/routing": "^12.0|^13.0",
         "illuminate/support": "^12.0|^13.0",
         "illuminate/view": "^12.0|^13.0",
-        "thewonderjoy/gaze-php": "^0.1"
+        "thewonderjoy/gaze-php": "^1.0"
     },
     "require-dev": {
         "opis/json-schema": "^2.4",
@@ -30,7 +31,7 @@
         "phpunit/phpunit": "^11.5|^12.0"
     },
     "repositories": [
-        { "type": "path", "url": "../php", "options": { "symlink": true, "versions": { "thewonderjoy/gaze-php": "0.1.x-dev" } } }
+        { "type": "path", "url": "../php", "options": { "symlink": true, "versions": { "thewonderjoy/gaze-php": "1.0.x-dev" } } }
     ],
     "autoload": {
         "psr-4": {

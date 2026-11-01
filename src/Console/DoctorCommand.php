@@ -49,7 +49,7 @@ final class DoctorCommand extends Command
         }
         $candidates += ['127.0.0.1' => 'this machine (loopback)'];
         $candidates += ['host.docker.internal' => 'Docker Desktop / Sail host'];
-        if ($env['gateway'] !== null) {
+        if ($env['gateway'] !== null && ($env['wsl'] || $env['docker'] || $env['sail'])) {
             $candidates += [$env['gateway'] => 'default gateway (WSL2 NAT / container host)'];
         }
 

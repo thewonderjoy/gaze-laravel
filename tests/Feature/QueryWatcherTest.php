@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace TheWonderJoy\Gaze\Laravel\Tests\Feature;
 
+use Illuminate\Session\DatabaseSessionHandler;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
+use TheWonderJoy\Gaze\Laravel\Support\AppOrigin;
 use TheWonderJoy\Gaze\Laravel\Tests\Fixtures\App\Post;
 use TheWonderJoy\Gaze\Laravel\Tests\Fixtures\App\Schema;
 use TheWonderJoy\Gaze\Laravel\Tests\Fixtures\App\User;
@@ -102,6 +104,23 @@ final class QueryWatcherTest extends TestCase
         $this->assertSame(1, $this->added('request')[0]['body']['duplicates']);
     }
 
+    public function testAQueryOnlyLaravelRanPointsAtTheLaravelCodeNotTheEntryScript(): void
+    {
+        $entry = (string) realpath(dirname(__DIR__) . '/Fixtures/entry-script.php');
+        $scripts = AppOrigin::$entryScripts;
+        AppOrigin::$entryScripts = [$entry];
+        try {
+            (require $entry)();
+        } finally {
+            AppOrigin::$entryScripts = $scripts;
+        }
+
+        $origin = $this->added('query')[0]['origin'];
+        $this->assertStringEndsWith('Session/DatabaseSessionHandler.php', str_replace('\\', '/', $origin['file']));
+        $this->assertSame(['read', DatabaseSessionHandler::class], [$origin['function'], $origin['class']]);
+        $this->assertSame($entry, $origin['frames'][0]['file'], 'the entry script stays as the next frame');
+    }
+
     public function testSlowQueriesWatcherSendsOnlySlowOnesWithTheFlag(): void
     {
         $this->manager()->disable('queries');
@@ -115,6 +134,18 @@ final class QueryWatcherTest extends TestCase
         gaze()->stopShowingSlowQueries();
         DB::select('select 2');
         $this->assertCount(1, $this->added('query'));
+    }
+
+    public function testSlowQueriesThresholdWithACallbackLastsForTheCallbackOnly(): void
+    {
+        $this->app['config']->set('gaze.queries.slow_threshold_ms', 10_000);
+        gaze()->showSlowQueries(0, fn () => DB::select('select 1'));
+        DB::select('select 2');
+
+        $flags = array_map(static fn ($q) => $q['body']['flags'], $this->added('query'));
+        $this->assertCount(2, $flags);
+        $this->assertContains('slow', $flags[0], 'slow at 0 ms inside the callback');
+        $this->assertNotContains('slow', $flags[1], 'the configured 10 s threshold again afterwards');
     }
 
     public function testTypeWatchersSelectByStatementIncludingCtesAndComments(): void
@@ -160,6 +191,25 @@ final class QueryWatcherTest extends TestCase
         DB::select('select 1');
         $q = $this->added('query')[0];
         $this->assertSame(['green', 'SQL', 'lg'], [$q['color'], $q['label'], $q['size']]);
+    }
+
+    public function testAnNPlusOneGroupKeepsTheModifiersItsQueriesRanWith(): void
+    {
+        Schema::seed(5, 1);
+        Route::get('/posts', function () {
+            $names = Post::all()->map(fn (Post $p) => $p->author->name)->all(); // N+1, sent again at trace end
+            gaze()->showQueries()->green()->label('later');
+
+            return $names;
+        });
+        $this->resetCapture();
+
+        $this->get('/posts')->assertOk();
+
+        $group = array_values(array_filter($this->requestQueries(), static fn ($q) => in_array('n+1', $q['body']['flags'], true)))[0];
+        $this->assertSame(5, $group['body']['count'], 'the trace-end update arrived');
+        $this->assertArrayNotHasKey('label', $group, 'modifiers set after the queries do not reach their group');
+        $this->assertSame('orange', $group['color']);
     }
 
     public function testCountQueriesReturnsTheResultAndSendsATable(): void
